@@ -2910,11 +2910,25 @@ static int dw_hdmi_bridge_attach(struct drm_bridge *bridge,
 {
 	struct dw_hdmi *hdmi = bridge->driver_private;
 
-	/* DRM_BRIDGE_ATTACH_NO_CONNECTOR requires a remote-endpoint to the next bridge */
-	if (WARN_ON((flags & DRM_BRIDGE_ATTACH_NO_CONNECTOR) && !hdmi->plat_data->output_port))
-		return -EINVAL;
-
 	if (flags & DRM_BRIDGE_ATTACH_NO_CONNECTOR) {
+		/*
+		 * On a firmware description with no OF graph - ACPI, where
+		 * dev->of_node is NULL and output_port is therefore 0 - there
+		 * is no remote endpoint to resolve and no downstream bridge to
+		 * attach.  The chain ends here: this bridge's own DETECT, EDID
+		 * and HPD ops back the drm_bridge_connector the display driver
+		 * creates, so the attach is already complete.
+		 */
+		if (!hdmi->dev->of_node)
+			return 0;
+
+		/*
+		 * DRM_BRIDGE_ATTACH_NO_CONNECTOR requires a remote endpoint to
+		 * the next bridge.
+		 */
+		if (WARN_ON(!hdmi->plat_data->output_port))
+			return -EINVAL;
+
 		struct device_node *remote __free(device_node) =
 			of_graph_get_remote_node(hdmi->dev->of_node,
 						 hdmi->plat_data->output_port, -1);
@@ -3410,14 +3424,25 @@ struct dw_hdmi *dw_hdmi_probe(struct platform_device *pdev,
 		hdmi->regm = plat_data->regm;
 	}
 
-	clk = devm_clk_get_enabled(hdmi->dev, "isfr");
+	/*
+	 * On a firmware-clocked ACPI platform (no of_node, no clock
+	 * provider) the gates behind isfr/iahb are already open; treat the
+	 * clocks as optional there.  The DT path keeps them required.
+	 */
+	if (hdmi->dev->of_node)
+		clk = devm_clk_get_enabled(hdmi->dev, "isfr");
+	else
+		clk = devm_clk_get_optional_enabled(hdmi->dev, "isfr");
 	if (IS_ERR(clk)) {
 		ret = PTR_ERR(clk);
 		dev_err(hdmi->dev, "Unable to get HDMI isfr clk: %d\n", ret);
 		goto err_res;
 	}
 
-	clk = devm_clk_get_enabled(hdmi->dev, "iahb");
+	if (hdmi->dev->of_node)
+		clk = devm_clk_get_enabled(hdmi->dev, "iahb");
+	else
+		clk = devm_clk_get_optional_enabled(hdmi->dev, "iahb");
 	if (IS_ERR(clk)) {
 		ret = PTR_ERR(clk);
 		dev_err(hdmi->dev, "Unable to get HDMI iahb clk: %d\n", ret);
@@ -3642,6 +3667,17 @@ void dw_hdmi_unbind(struct dw_hdmi *hdmi)
 	dw_hdmi_remove(hdmi);
 }
 EXPORT_SYMBOL_GPL(dw_hdmi_unbind);
+
+/*
+ * Accessor for glue drivers on firmware without an OF graph (ACPI
+ * PRP0001): of_drm_find_bridge() cannot resolve this bridge there, so
+ * hand it out directly.
+ */
+struct drm_bridge *dw_hdmi_get_bridge(struct dw_hdmi *hdmi)
+{
+	return &hdmi->bridge;
+}
+EXPORT_SYMBOL_GPL(dw_hdmi_get_bridge);
 
 void dw_hdmi_resume(struct dw_hdmi *hdmi)
 {
