@@ -8,6 +8,7 @@
 #include <linux/bitfield.h>
 #include <linux/clk.h>
 #include <linux/clk-provider.h>
+#include <linux/clkdev.h>
 #include <linux/device.h>
 #include <linux/ethtool.h>
 #include <linux/io.h>
@@ -407,6 +408,40 @@ static int meson8b_init_prg_eth(struct meson8b_dwmac *dwmac)
 	return 0;
 }
 
+/*
+ * Provide the CSR clock when the device was described by ACPI.
+ *
+ * stmmac_probe_config_dt() looks up the "stmmaceth" clock to learn the CSR
+ * clock rate, which stmmac_clk_csr_set() turns into the GMII_Address CR
+ * field - the MDC divider.  Under ACPI there is no clock controller driver
+ * to resolve it, so the lookup fails, clk_get_rate() reports 0, the rate
+ * table walk falls off its terminating entry and CR is programmed all-ones.
+ * MDC then runs far out of spec and MDIO bus registration fails with -EIO.
+ *
+ * The MAC is fed by clk81, which the firmware has already configured and
+ * left running (BL2 reports "CLK81: 166.6M" on G12B).  Describe that with a
+ * fixed-rate clock so the divider is computed from a real rate.
+ * "amlogic,csr-frequency" overrides it where firmware differs.
+ */
+static int meson8b_dwmac_register_acpi_csr_clk(struct device *dev)
+{
+	struct clk_hw *hw;
+	char name[32];
+	u32 rate = 166666666;
+
+	if (dev_of_node(dev))
+		return 0;
+
+	device_property_read_u32(dev, "amlogic,csr-frequency", &rate);
+
+	snprintf(name, sizeof(name), "%s#stmmaceth", dev_name(dev));
+	hw = devm_clk_hw_register_fixed_rate(dev, name, NULL, 0, rate);
+	if (IS_ERR(hw))
+		return PTR_ERR(hw);
+
+	return devm_clk_hw_register_clkdev(dev, hw, "stmmaceth", dev_name(dev));
+}
+
 static int meson8b_dwmac_probe(struct platform_device *pdev)
 {
 	struct plat_stmmacenet_data *plat_dat;
@@ -415,6 +450,11 @@ static int meson8b_dwmac_probe(struct platform_device *pdev)
 	int ret;
 
 	ret = stmmac_get_platform_resources(pdev, &stmmac_res);
+	if (ret)
+		return ret;
+
+	/* must precede the config parse, which is what looks the clock up */
+	ret = meson8b_dwmac_register_acpi_csr_clk(&pdev->dev);
 	if (ret)
 		return ret;
 
