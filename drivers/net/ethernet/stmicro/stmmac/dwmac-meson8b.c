@@ -17,6 +17,7 @@
 #include <linux/of_net.h>
 #include <linux/mfd/syscon.h>
 #include <linux/platform_device.h>
+#include <linux/property.h>
 #include <linux/stmmac.h>
 
 #include "stmmac_platform.h"
@@ -142,7 +143,7 @@ static int meson8b_init_rgmii_tx_clk(struct meson8b_dwmac *dwmac)
 {
 	struct clk *clk;
 	struct device *dev = dwmac->dev;
-	static const struct clk_parent_data mux_parents[] = {
+	struct clk_parent_data mux_parents[] = {
 		{ .fw_name = "clkin0", },
 		{ .index = -1, },
 	};
@@ -161,6 +162,33 @@ static int meson8b_init_rgmii_tx_clk(struct meson8b_dwmac *dwmac)
 	clk_configs = devm_kzalloc(dev, sizeof(*clk_configs), GFP_KERNEL);
 	if (!clk_configs)
 		return -ENOMEM;
+
+	/*
+	 * clkin0 is this mux's only external parent - CLKID_FCLK_DIV2 in
+	 * DeviceTree. ACPI has no clock provider and cannot express the
+	 * reference, so register a fixed-rate stand-in instead: nothing ever
+	 * reparents or rate-changes this input, the driver only divides it
+	 * below, so the rate is the whole of what matters and it is a firmware
+	 * fact. Firmware may state it as "amlogic,clkin0-frequency"; fall back
+	 * to the G12 fclk_div2 rate, which is what every G12 DeviceTree wires
+	 * here. The DeviceTree path is untouched.
+	 */
+	if (!dev_of_node(dev)) {
+		char fixed_name[32];
+		struct clk_hw *fixed;
+		u32 rate = 1000000000;
+
+		device_property_read_u32(dev, "amlogic,clkin0-frequency", &rate);
+
+		snprintf(fixed_name, sizeof(fixed_name), "%s#clkin0",
+			 dev_name(dev));
+		fixed = devm_clk_hw_register_fixed_rate(dev, fixed_name, NULL,
+							0, rate);
+		if (IS_ERR(fixed))
+			return PTR_ERR(fixed);
+
+		mux_parents[0] = (struct clk_parent_data){ .hw = fixed };
+	}
 
 	clk_configs->m250_mux.reg = dwmac->regs + PRG_ETH0;
 	clk_configs->m250_mux.shift = __ffs(PRG_ETH0_CLK_M250_SEL_MASK);
@@ -398,8 +426,14 @@ static int meson8b_dwmac_probe(struct platform_device *pdev)
 	if (!dwmac)
 		return -ENOMEM;
 
+	/*
+	 * device_get_match_data() resolves both DeviceTree and ACPI, including
+	 * PRP0001 devices where dev->of_node is NULL and
+	 * of_device_get_match_data() silently returns NULL - which then fails
+	 * this probe with -EINVAL.
+	 */
 	dwmac->data = (const struct meson8b_dwmac_data *)
-		of_device_get_match_data(&pdev->dev);
+		device_get_match_data(&pdev->dev);
 	if (!dwmac->data)
 		return -EINVAL;
 	dwmac->regs = devm_platform_ioremap_resource(pdev, 1);
@@ -410,14 +444,14 @@ static int meson8b_dwmac_probe(struct platform_device *pdev)
 	dwmac->phy_mode = plat_dat->phy_interface;
 
 	/* use 2ns as fallback since this value was previously hardcoded */
-	if (of_property_read_u32(pdev->dev.of_node, "amlogic,tx-delay-ns",
+	if (device_property_read_u32(&pdev->dev, "amlogic,tx-delay-ns",
 				 &dwmac->tx_delay_ns))
 		dwmac->tx_delay_ns = 2;
 
 	/* RX delay defaults to 0ps since this is what many boards use */
-	if (of_property_read_u32(pdev->dev.of_node, "rx-internal-delay-ps",
+	if (device_property_read_u32(&pdev->dev, "rx-internal-delay-ps",
 				 &dwmac->rx_delay_ps)) {
-		if (!of_property_read_u32(pdev->dev.of_node,
+		if (!device_property_read_u32(&pdev->dev,
 					  "amlogic,rx-delay-ns",
 					  &dwmac->rx_delay_ps))
 			/* convert ns to ps */
