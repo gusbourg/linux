@@ -137,29 +137,6 @@ static struct fbc_chunk *fbc_chunk_get_locked(struct device *dev)
 	return c;
 }
 
-/*
- * Same, but under memory pressure fall back on the parked generations.
- * Failing the session outright is worse than the residual risk of
- * reusing frames that are almost certainly off-screen by now - this is
- * the last resort before -ENOMEM.  Pool lock held.
- */
-static struct fbc_chunk *fbc_chunk_get_pressure_locked(struct device *dev)
-{
-	struct fbc_chunk *c = fbc_chunk_get_locked(dev);
-
-	if (c)
-		return c;
-
-	if (list_empty(&fbc_pool.park[0]) && list_empty(&fbc_pool.park[1]))
-		return NULL;
-
-	list_splice_tail_init(&fbc_pool.park[1], &fbc_pool.free);
-	list_splice_tail_init(&fbc_pool.park[0], &fbc_pool.free);
-	dev_warn_once(dev, "CMA pressure: recycled parked FBC chunks\n");
-
-	return fbc_chunk_get_locked(dev);
-}
-
 /* Move every chunk this session holds onto @dst.  Pool lock held. */
 static void fbc_chunks_park_locked(struct codec_hevc_common *comm,
 				   struct list_head *dst)
@@ -633,10 +610,21 @@ static int codec_hevc_alloc_fbc_buffers(struct amvdec_session *sess,
 			return -ENOMEM;
 		}
 
+		/*
+		 * There is deliberately no fallback when the pool and CMA are
+		 * both exhausted.  park[0] is what the session that just
+		 * stopped was displaying and can still be on screen: handing
+		 * it out lets the new session's firmware DMA into memory the
+		 * display is scanning out, and it then gets dma_free_coherent()
+		 * ed while still referenced - which surfaced as a BUG in
+		 * set_buddy_order()/is_free_buddy_page() from an unrelated
+		 * process.  park[1] is always empty by this point, because
+		 * this function drained it into the free list above.  So the
+		 * only correct answer is a clean -ENOMEM.
+		 */
 		mutex_lock(&fbc_pool.lock);
 		for (i = 0; i < nr_chunks; ++i) {
-			comm->fbc_chunks[idx][i] =
-				fbc_chunk_get_pressure_locked(dev);
+			comm->fbc_chunks[idx][i] = fbc_chunk_get_locked(dev);
 			if (!comm->fbc_chunks[idx][i])
 				break;
 		}
