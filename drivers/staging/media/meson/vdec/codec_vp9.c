@@ -1315,7 +1315,8 @@ static void codec_vp9_process_frame(struct amvdec_session *sess)
 				   vp9->default_filt_lvl);
 
 	/* ask uCode to start decoding */
-	amvdec_write_dos(core, VP9_DEC_STATUS_REG, VP9_10B_DECODE_SLICE);
+	amvdec_write_dos_action(core, VP9_DEC_STATUS_REG,
+				VP9_10B_DECODE_SLICE);
 }
 
 static void codec_vp9_process_lf(struct codec_vp9 *vp9)

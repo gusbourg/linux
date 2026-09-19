@@ -102,6 +102,19 @@ void amvdec_write_dos(struct amvdec_core *core, u32 reg, u32 val)
 }
 EXPORT_SYMBOL_GPL(amvdec_write_dos);
 
+void amvdec_write_dos_action(struct amvdec_core *core, u32 reg, u32 val)
+{
+	/*
+	 * Firmware action registers are doorbells: after observing one, the
+	 * decoder's processor may immediately consume host-programmed registers
+	 * and DMA data. Keep those writes ahead of the action while retaining
+	 * relaxed access for ordinary DOS register programming.
+	 */
+	dma_wmb();
+	amvdec_write_dos(core, reg, val);
+}
+EXPORT_SYMBOL_GPL(amvdec_write_dos_action);
+
 void amvdec_write_dos_bits(struct amvdec_core *core, u32 reg, u32 val)
 {
 	amvdec_write_dos(core, reg, amvdec_read_dos(core, reg) | val);

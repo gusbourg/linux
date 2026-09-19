@@ -22,6 +22,7 @@ int amvdec_set_canvases(struct amvdec_session *sess,
 /* Helpers to read/write to the various IPs (DOS, PARSER) */
 u32 amvdec_read_dos(struct amvdec_core *core, u32 reg);
 void amvdec_write_dos(struct amvdec_core *core, u32 reg, u32 val);
+void amvdec_write_dos_action(struct amvdec_core *core, u32 reg, u32 val);
 void amvdec_write_dos_bits(struct amvdec_core *core, u32 reg, u32 val);
 void amvdec_clear_dos_bits(struct amvdec_core *core, u32 reg, u32 val);
 u32 amvdec_read_parser(struct amvdec_core *core, u32 reg);
