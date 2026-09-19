@@ -896,6 +896,61 @@ static int vdec_enum_framesizes(struct file *file, void *fh,
 	return 0;
 }
 
+static int vdec_resume_capture(struct amvdec_session *sess)
+{
+	struct vb2_queue *q = v4l2_m2m_get_dst_vq(sess->m2m_ctx);
+	struct amvdec_codec_ops *ops = sess->fmt_out->codec_ops;
+	unsigned int sizes[3], planes, i, j;
+	u32 output_size = amvdec_get_output_size(sess);
+	unsigned int minimum;
+
+	if (sess->status != STATUS_NEEDS_RESUME)
+		return 0;
+	if (!sess->streamon_cap || !ops->resume)
+		return -EINVAL;
+
+	minimum = max_t(unsigned int, sess->fmt_out->min_buffers,
+			v4l2_ctrl_g_ctrl(sess->ctrl_min_buf_capture));
+	if (vb2_get_num_buffers(q) < minimum)
+		return -EINVAL;
+
+	switch (sess->pixfmt_cap) {
+	case V4L2_PIX_FMT_NV12M:
+		planes = 2;
+		sizes[0] = output_size;
+		sizes[1] = output_size / 2;
+		break;
+	case V4L2_PIX_FMT_YUV420M:
+		planes = 3;
+		sizes[0] = output_size;
+		sizes[1] = output_size / 4;
+		sizes[2] = output_size / 4;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	/*
+	 * Inspect actual allocations, including buffers retained by the client.
+	 * Cached queue sizes may describe the format before SOURCE_CHANGE.
+	 */
+	for (i = 0; i < q->max_num_buffers; i++) {
+		struct vb2_buffer *vb = vb2_get_buffer(q, i);
+
+		if (!vb)
+			continue;
+		if (vb->num_planes != planes)
+			return -EINVAL;
+		for (j = 0; j < planes; j++)
+			if (vb2_plane_size(vb, j) < sizes[j])
+				return -EINVAL;
+	}
+
+	ops->resume(sess);
+	sess->status = STATUS_RUNNING;
+	return 0;
+}
+
 static int
 vdec_decoder_cmd(struct file *file, void *fh, struct v4l2_decoder_cmd *cmd)
 {
@@ -912,9 +967,14 @@ vdec_decoder_cmd(struct file *file, void *fh, struct v4l2_decoder_cmd *cmd)
 		return 0;
 
 	if (cmd->cmd == V4L2_DEC_CMD_START) {
-		v4l2_m2m_clear_state(sess->m2m_ctx);
-		sess->should_stop = 0;
-		return 0;
+		mutex_lock(&sess->lock);
+		ret = vdec_resume_capture(sess);
+		if (!ret) {
+			v4l2_m2m_clear_state(sess->m2m_ctx);
+			sess->should_stop = 0;
+		}
+		mutex_unlock(&sess->lock);
+		return ret;
 	}
 
 	/* Should not happen */
