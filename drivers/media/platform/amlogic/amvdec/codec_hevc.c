@@ -2,6 +2,7 @@
 /*
  * Copyright (C) 2018 Maxime Jourdan <mjourdan@baylibre.com>
  * Copyright (C) 2015 Amlogic, Inc. All rights reserved.
+ * Copyright (C) 2026 Christian Hewitt <christianshewitt@gmail.com>
  *
  * HEVC request decoding.
  */

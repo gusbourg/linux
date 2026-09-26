@@ -2,6 +2,7 @@
 /*
  * Copyright (C) 2018 BayLibre, SAS
  * Author: Maxime Jourdan <mjourdan@baylibre.com>
+ * Copyright (C) 2026 Christian Hewitt <christianshewitt@gmail.com>
  *
  * VDEC_1 hardware control for H.264 and MPEG-2.
  */

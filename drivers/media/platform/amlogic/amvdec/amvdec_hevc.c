@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright (C) 2018 Maxime Jourdan <maxi.jourdan@wanadoo.fr>
+ * Copyright (C) 2026 Christian Hewitt <christianshewitt@gmail.com>
  *
  * VDEC_HEVC hardware control for HEVC and VP9.
  */

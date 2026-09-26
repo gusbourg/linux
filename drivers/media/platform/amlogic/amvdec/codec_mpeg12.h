@@ -2,6 +2,7 @@
 /*
  * Copyright (C) 2018 BayLibre, SAS
  * Author: Maxime Jourdan <mjourdan@baylibre.com>
+ * Copyright (C) 2026 Christian Hewitt <christianshewitt@gmail.com>
  *
  * MPEG-2 request decoding with multi-instance firmware.
  */

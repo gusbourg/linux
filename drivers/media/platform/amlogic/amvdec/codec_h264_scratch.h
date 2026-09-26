@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
 /*
  * Copyright (C) 2026 Gus Bourg <gus@bourg.net>
+ * Copyright (C) 2026 Christian Hewitt <christianshewitt@gmail.com>
  *
  * H.264 header-parser scratch storage.
  */

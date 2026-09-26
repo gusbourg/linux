@@ -2,6 +2,7 @@
 /*
  * Copyright (C) 2019 BayLibre, SAS
  * Author: Maxime Jourdan <mjourdan@baylibre.com>
+ * Copyright (C) 2026 Christian Hewitt <christianshewitt@gmail.com>
  *
  * H.264 request decoding with multi-instance firmware.
  */

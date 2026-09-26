@@ -2,6 +2,7 @@
 /*
  * Copyright (C) 2018 BayLibre, SAS
  * Author: Maxime Jourdan <mjourdan@baylibre.com>
+ * Copyright (C) 2026 Christian Hewitt <christianshewitt@gmail.com>
  *
  * HEVC and VP9 capture backing and framebuffer compression.
  */
